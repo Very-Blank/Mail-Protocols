@@ -33,7 +33,9 @@ pub const Command = union(CommandType) {
     QUIT: void,
 
     pub fn parse(raw: []const u8) !Command {
+        std.debug.assert((.{ '\r', '\n' }).len <= raw.len);
         std.debug.assert(std.mem.eql(u8, raw[raw.len - 2 ..], &.{ '\r', '\n' }));
+
         const buffer: []const u8 = raw[0 .. raw.len - 2];
 
         if (buffer.len < 4)
@@ -106,7 +108,7 @@ pub const Command = union(CommandType) {
                 if (!std.ascii.eqlIgnoreCase(
                     buffer[start .. start + (.{ 'F', 'R', 'O', 'M', ':', '<' }).len],
                     &.{ 'F', 'R', 'O', 'M', ':', '<' },
-                ) and
+                ) or
                     buffer[buffer.len - 1] != '>')
                     return error.InvalidCommand;
 
@@ -143,7 +145,7 @@ pub const Command = union(CommandType) {
                 if (!std.ascii.eqlIgnoreCase(
                     buffer[start .. start + (.{ 'T', 'O', ':', '<' }).len],
                     &.{ 'T', 'O', ':', '<' },
-                ) and
+                ) or
                     buffer[buffer.len - 1] != '>')
                     return error.InvalidCommand;
 
@@ -220,4 +222,136 @@ test "Valid command parsing" {
 
     try std.testing.expectEqual(Command{ .DATA = {} }, try Command.parse("DATA\r\n"));
     try std.testing.expectEqual(Command{ .QUIT = {} }, try Command.parse("QUIT\r\n"));
+}
+
+test "Invalid command parsing" {
+    try std.testing.expectError(error.NoSeperator, Command.parse("MAILFROM:<sender@example.com>\r\n"));
+    try std.testing.expectError(error.NoSeperator, Command.parse("RCPTTO:<recipient@example.com>\r\n"));
+
+    try std.testing.expectError(error.InvalidCommand, Command.parse("MAIL FROM:sender@example.com>\r\n"));
+    try std.testing.expectError(error.InvalidCommand, Command.parse("RCPT TO:recipient@example.com>\r\n"));
+
+    try std.testing.expectError(error.InvalidCommand, Command.parse("MAIL FROM:<sender@example.com\r\n"));
+    try std.testing.expectError(error.InvalidCommand, Command.parse("RCPT TO:<recipient@example.com\r\n"));
+
+    // try Command.parse("RCPT TO:<recipient@example.com>\r\n"),
+}
+
+fn mutate(smith: *std.testing.Smith, list: *std.ArrayList(u8)) void {
+    const tokens = [_][]const u8{
+        "\r\n",
+        "\x00",
+        "MAIL",
+        "FROM",
+        "RCPT",
+        "TO",
+        "\r",
+        "\n",
+        "<",
+        ">",
+        "@",
+        ":",
+        ".",
+        " ",
+    };
+
+    const max_duplicate_len = 4;
+
+    switch (smith.value(enum {
+        delete,
+        overwrite,
+        byte,
+        token,
+        duplicate,
+        truncate,
+        swap,
+    })) {
+        .delete => if (0 < list.items.len) {
+            _ = list.orderedRemove(smith.valueRangeLessThan(u64, 0, list.items.len));
+        },
+        .overwrite => if (0 < list.items.len) {
+            list.items[smith.valueRangeLessThan(u64, 0, list.items.len)] = smith.value(u8);
+        },
+        .byte => if (list.items.len + 1 <= 510) {
+            list.insertAssumeCapacity(smith.valueRangeAtMost(u64, 0, list.items.len), smith.value(u8));
+        },
+        .token => if (list.items.len + 4 <= 510) {
+            const token = tokens[smith.valueRangeLessThan(u64, 0, tokens.len)];
+            list.insertSliceAssumeCapacity(smith.valueRangeAtMost(u64, 0, list.items.len), token);
+        },
+        .duplicate => if (1 < list.items.len) {
+            const start = smith.valueRangeLessThan(u64, 0, list.items.len - 1);
+            const len = @min(smith.valueRangeAtMost(u64, 1, list.items.len - start), max_duplicate_len);
+
+            const times = smith.valueRangeAtMost(u64, 0, @divFloor(510 - list.items.len, len));
+
+            const slice = list.items[start .. start + len];
+            for (0..times) |_| {
+                list.insertSliceAssumeCapacity(start + len, slice);
+            }
+        },
+        .truncate => if (1 < list.items.len) {
+            list.shrinkRetainingCapacity(smith.valueRangeLessThan(u64, 1, list.items.len));
+        },
+        .swap => if (1 < list.items.len) {
+            const a = smith.valueRangeLessThan(u64, 0, list.items.len);
+            const b = smith.valueRangeLessThan(u64, 0, list.items.len);
+            std.mem.swap(u8, &list.items[a], &list.items[b]);
+        },
+    }
+}
+
+fn fuzzParse(_: void, smith: *std.testing.Smith) anyerror!void {
+    const seeds = [_][]const u8{
+        "HELO a@#0",
+        "HELO sender@example.com",
+        "HELO example.com",
+        "HELO mail.example.com",
+        "HELO #1",
+        "HELO [192.168.0.1]",
+        "HELO a.#2.example.com",
+
+        "MAIL FROM:<sender@example.com>",
+        "MAIL FROM:<a@#1>",
+        "MAIL FROM:<first.last@example.com>",
+        "MAIL FROM:<user+tag@sub.example.com>",
+        "MAIL FROM:<a!b#c$d%e&f'g*h=i?j^k_l`m{n|o}p~q@example.com>",
+        "MAIL FROM:<user@[10.0.0.1]>",
+        "MAIL FROM:<user@#4294967295>",
+        "MAIL FROM:<\"quoted string\"@example.com>",
+        "MAIL FROM:<\"a\\\"b\\\\c\"@example.com>",
+        "MAIL FROM:<@relay.example.com:user@example.com>",
+        "MAIL FROM:<@relay1.example.com,@relay2.example.org:user@example.com>",
+        "mail from:<lowercase@example.com>",
+
+        "RCPT TO:<recipient@example.com>",
+        "RCPT TO:<a@#0>",
+        "RCPT TO:<recipient@example.com>",
+        "RCPT TO:<user@[127.0.0.1]>",
+        "RCPT TO:<\"Mr. Smith\"@example.com>",
+        "RCPT TO:<@hop.example.com,@hop2.example.net:dest@example.org>",
+        "rcpt to:<lower@example.com>",
+
+        "QUIT",
+
+        "DATA",
+
+        "",
+    };
+
+    var buffer: [512]u8 = @splat(0);
+    var list: std.ArrayList(u8) = .initBuffer(&buffer);
+
+    const seed = smith.valueRangeLessThan(u64, 0, seeds.len);
+    list.appendSliceAssumeCapacity(seeds[seed]);
+
+    for (0..smith.valueRangeAtMost(u64, 0, 100)) |_| mutate(smith, &list);
+
+    list.appendSliceAssumeCapacity(&.{ '\r', '\n' });
+
+    _ = Command.parse(list.items) catch return;
+}
+
+test "fuzz: Command.parse never panics" {
+    try std.testing.fuzz({}, fuzzParse, .{});
 }

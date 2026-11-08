@@ -79,7 +79,7 @@ pub fn serve(self: *Self) !void {
 
                             // We do this because there is no way of knowing when the end sequence happens.
                             // FIXME: THIS ISN'T DONE!
-                            if (std.mem.find(u8, &self.text_line, "\r\n.\r\n")) |end| {
+                            if (std.mem.find(u8, &self.text_line, &.{ '\r', '\n', '.', '\r', '\n' })) |end| {
                                 std.debug.print("DATA: {s}\n", .{self.text_line[0..end]});
                                 break;
                             }
@@ -129,7 +129,7 @@ pub fn readCommand(self: *Self) !Command {
         while (true) {
             const result = linux.read(
                 self.socket,
-                buffer,
+                buffer.ptr,
                 buffer.len,
             );
 
@@ -137,8 +137,8 @@ pub fn readCommand(self: *Self) !Command {
                 return error.FailedToRead;
             }
 
-            if (std.mem.find(u8, &self.commad_line, .{ '\r', '\n' })) |end|
-                break :init self.commad_line[0..end];
+            if (std.mem.find(u8, &self.commad_line, &.{ '\r', '\n' })) |end|
+                break :init self.commad_line[0 .. end + (.{ '\r', '\n' }).len];
 
             length += result;
             buffer = self.commad_line[length..];
