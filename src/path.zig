@@ -1,3 +1,4 @@
+const std = @import("std");
 const User = @import("user.zig");
 const Domain = @import("domain.zig");
 
@@ -23,36 +24,13 @@ const Self = @This();
 // IMPL:
 // <char> ::= <a> | <d>
 pub fn parse(buffer: []const u8) !Self {
-    const start: usize = found: {
-        for (0..buffer.len) |i| {
-            switch (buffer[i]) {
-                '<' => break :found i,
-                else => {},
-            }
-        }
+    // https://www.rfc-editor.org/info/rfc821/#section-4.1.2
+    // Shortest valid reverse-path is:
+    // <c> "@" "#" <number>
+    std.debug.assert((.{ 'a', '@', '#', '0' }).len <= buffer.len);
 
-        return error.NoPathStart;
-    };
-
-    // It's much more easier to guarantee corrrect behaviour if
-    // we start from the end.
-    // Since it's possible for the local part to have: "\" <x>
-    // Where <x> could be ">" and other bs
-    const end: usize = found: {
-        var i: usize = buffer.len - 1;
-        while (0 < i) : (i -= 1) {
-            switch (buffer[i]) {
-                '>' => break :found i,
-                else => {},
-            }
-        }
-
-        return error.NoPathEnd;
-    };
-
-    // Same here.
     const middle: usize = found: {
-        var i: usize = end;
+        var i: usize = buffer.len - 1;
         while (0 < i) : (i -= 1) {
             switch (buffer[i]) {
                 '@' => break :found i,
@@ -63,11 +41,11 @@ pub fn parse(buffer: []const u8) !Self {
         return error.NoPathMiddle;
     };
 
-    if (!(start + 1 < middle and middle + 1 < end))
+    if (middle == 0 or buffer.len < middle + (.{ '#', '0' }).len)
         return error.InvalidPath;
 
     return .{
-        .user = try User.parse(buffer[start + 1 .. middle]),
-        .domain = try Domain.parse(buffer[middle + 1 .. end]),
+        .user = try User.parse(buffer[0..middle]),
+        .domain = try Domain.parse(buffer[middle + 1 ..]),
     };
 }

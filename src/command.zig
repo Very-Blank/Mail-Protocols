@@ -32,120 +32,135 @@ pub const Command = union(CommandType) {
     DATA: void,
     QUIT: void,
 
-    // https://www.rfc-editor.org/info/rfc821/#page-42
-    const max_len = 512;
+    pub fn parse(raw: []const u8) !Command {
+        std.debug.assert(std.mem.eql(u8, raw[raw.len - 2 ..], &.{ '\r', '\n' }));
+        const buffer: []const u8 = raw[0 .. raw.len - 2];
 
-    pub const Reader = struct {
-        buffer: []const u8,
-        index: usize = 0,
-
-        pub inline fn consume(self: *Reader, n: usize) bool {
-            if (self.buffer.len <= self.index + n) {
-                self.index = self.buffer.len;
-                return false;
-            }
-
-            defer self.index += n;
-
-            return true;
-        }
-
-        pub inline fn consumeSpace(self: *Reader) void {
-            while (self.index < self.buffer.len and self.buffer[self.index] == ' ') : (self.index += 1) {}
-        }
-
-        pub inline fn consumeExpect(self: *Reader, expected: []const u8) bool {
-            if (self.buffer.len <= self.index + expected.len)
-                return false;
-
-            defer self.index += expected.len;
-
-            return std.ascii.eqlIgnoreCase(
-                self.buffer[self.index .. self.index + expected.len],
-                expected,
-            );
-        }
-
-        pub inline fn readToEnd(self: *Reader) ![]const u8 {
-            if (self.buffer.len <= self.index)
-                return error.InvalidCommand;
-
-            const start = self.index;
-
-            while (self.index < self.buffer.len) : (self.index += 1) {
-                if (self.buffer[self.index] == '\r' and self.index + 1 < self.buffer.len and self.buffer[self.index + 1] == '\n' and self.index != start) {
-                    return self.buffer[start..self.index];
-                }
-            }
-
+        if (buffer.len < 4)
             return error.InvalidCommand;
-        }
-    };
 
-    pub fn parse(buffer: [max_len]u8) !Command {
-        var reader: Reader = .{ .buffer = &buffer };
-
-        std.debug.assert(
-            reader.consume(4),
-        );
-
-        const command: CommandType = try .parse(.{
-            buffer[0],
-            buffer[1],
-            buffer[2],
-            buffer[3],
-        });
+        const command: CommandType = try .parse(buffer[0..4].*);
 
         switch (command) {
             // HELO <SP> <domain> <CRLF>
             .HELO => {
-                if (!reader.consumeExpect(" "))
+                // https://www.rfc-editor.org/info/rfc821/#section-4.1.2
+                // Shortest valid domain is:
+                // "#" <number>
+                // NOTE: Used an array since it ensures there a exactly the characters we want.
+                if (buffer.len < (.{ 'H', 'E', 'L', 'O', ' ', '#', '0' }).len)
+                    return error.InvalidCommand;
+
+                // https://www.rfc-editor.org/info/rfc821/#section-4.1.2
+                // Must have at least on space!
+                if (buffer[4] != ' ')
                     return error.NoSeperator;
 
-                reader.consumeSpace();
+                const start: usize = init: {
+                    for (buffer[5..], 5..) |c, i| {
+                        switch (c) {
+                            ' ' => {},
+                            else => break :init i,
+                        }
+                    }
+
+                    return error.InvalidCommand;
+                };
+
+                if (buffer.len < start + (.{ '#', '1' }).len)
+                    // No domain
+                    return error.InvalidCommand;
 
                 return .{
-                    .HELO = try Domain.parse(try reader.readToEnd()),
+                    .HELO = try Domain.parse(buffer[start..]),
                 };
             },
             // MAIL <SP> FROM:<reverse-path> <CRLF>
             .MAIL => {
-                if (!reader.consumeExpect(" "))
-                    return error.NoSeperator;
-
-                reader.consumeSpace();
-
-                if (!reader.consumeExpect("FROM:"))
+                // https://www.rfc-editor.org/info/rfc821/#section-4.1.2
+                // Shortest valid reverse-path is:
+                // "<" <c> "@" "#" <number> ">"
+                if (buffer.len < (.{ 'M', 'A', 'I', 'L', ' ', 'F', 'R', 'O', 'M', ':', '<', 'a', '@', '#', '0', '>' }).len)
                     return error.InvalidCommand;
 
-                const slice = try reader.readToEnd();
+                // https://www.rfc-editor.org/info/rfc821/#section-4.1.2
+                // Must have at least on space!
+                if (buffer[4] != ' ')
+                    return error.NoSeperator;
 
-                return .{ .MAIL = try Path.parse(slice) };
+                const start: usize = init: {
+                    for (buffer[5..], 5..) |c, i| {
+                        switch (c) {
+                            ' ' => {},
+                            else => break :init i,
+                        }
+                    }
+
+                    return error.InvalidCommand;
+                };
+
+                if (buffer.len < start + (.{ 'F', 'R', 'O', 'M', ':', '<', 'a', '@', '#', '0', '>' }).len)
+                    // Missing rest of the command.
+                    return error.InvalidCommand;
+
+                if (!std.ascii.eqlIgnoreCase(
+                    buffer[start .. start + (.{ 'F', 'R', 'O', 'M', ':', '<' }).len],
+                    &.{ 'F', 'R', 'O', 'M', ':', '<' },
+                ) and
+                    buffer[buffer.len - 1] != '>')
+                    return error.InvalidCommand;
+
+                return .{ .MAIL = try Path.parse(buffer[start + (.{ 'F', 'R', 'O', 'M', ':', '<' }).len .. buffer.len - 1]) };
             },
             // RCPT <SP> TO:<forward-path> <CRLF>
             .RCPT => {
-                if (!reader.consumeExpect(" "))
-                    return error.NoSeperator;
-
-                reader.consumeSpace();
-
-                if (!reader.consumeExpect("TO:"))
+                // https://www.rfc-editor.org/info/rfc821/#section-4.1.2
+                // Shortest valid reverse-path is:
+                // "<" <c> "@" "#" <number> ">"
+                if (buffer.len < (.{ 'M', 'A', 'I', 'L', ' ', 'T', 'O', ':', '<', 'a', '@', '#', '0', '>' }).len)
                     return error.InvalidCommand;
 
-                const slice = try reader.readToEnd();
+                // https://www.rfc-editor.org/info/rfc821/#section-4.1.2
+                // Must have at least on space!
+                if (buffer[4] != ' ')
+                    return error.NoSeperator;
 
-                return .{ .RCPT = try Path.parse(slice) };
+                const start: usize = init: {
+                    for (buffer[5..], 5..) |c, i| {
+                        switch (c) {
+                            ' ' => {},
+                            else => break :init i,
+                        }
+                    }
+
+                    return error.InvalidCommand;
+                };
+
+                if (buffer.len < start + (.{ 'T', 'O', ':', '<', 'a', '@', '#', '0', '>' }).len)
+                    // Missing rest of the command.
+                    return error.InvalidCommand;
+
+                if (!std.ascii.eqlIgnoreCase(
+                    buffer[start .. start + (.{ 'T', 'O', ':', '<' }).len],
+                    &.{ 'T', 'O', ':', '<' },
+                ) and
+                    buffer[buffer.len - 1] != '>')
+                    return error.InvalidCommand;
+
+                return .{ .RCPT = try Path.parse(buffer[start + (.{ 'T', 'O', ':', '<' }).len .. buffer.len - 1]) };
             },
+            // DATA <CRLF>
             .DATA => {
-                if (!reader.consumeExpect("\r\n"))
+                if (buffer.len != (.{ 'D', 'A', 'T', 'A' }).len)
                     return error.InvalidCommand;
 
                 return .{ .DATA = {} };
             },
             // QUIT <CRLF>
             .QUIT => {
-                if (!reader.consumeExpect("\r\n"))
+                if (buffer.len != (.{ 'Q', 'U', 'I', 'T' }).len)
                     return error.InvalidCommand;
+
                 return .{ .QUIT = {} };
             },
         }
@@ -171,4 +186,38 @@ test "Case insensitive of commands" {
     try std.testing.expectEqual(CommandType.HELO, try CommandType.parse("hELo".*));
     try std.testing.expectEqual(CommandType.HELO, try CommandType.parse("Helo".*));
     try std.testing.expectEqual(CommandType.HELO, try CommandType.parse("hElO".*));
+}
+
+test "Valid command parsing" {
+    try std.testing.expectEqual(
+        Command{ .HELO = .{ .buffer = ("example.com" ++ @as([53]u8, @splat(0))).*, .len = 11 } },
+        try Command.parse("HELO example.com\r\n"),
+    );
+
+    try std.testing.expectEqual(
+        Command{ .MAIL = .{ .domain = .{
+            .buffer = ("example.com" ++ @as([53]u8, @splat(0))).*,
+            .len = 11,
+        }, .user = .{
+            .buffer = ("sender" ++ @as([58]u8, @splat(0))).*,
+            .len = 6,
+        } } },
+
+        try Command.parse("MAIL FROM:<sender@example.com>\r\n"),
+    );
+
+    try std.testing.expectEqual(
+        Command{ .RCPT = .{ .domain = .{
+            .buffer = ("example.com" ++ @as([53]u8, @splat(0))).*,
+            .len = 11,
+        }, .user = .{
+            .buffer = ("recipient" ++ @as([55]u8, @splat(0))).*,
+            .len = 9,
+        } } },
+
+        try Command.parse("RCPT TO:<recipient@example.com>\r\n"),
+    );
+
+    try std.testing.expectEqual(Command{ .DATA = {} }, try Command.parse("DATA\r\n"));
+    try std.testing.expectEqual(Command{ .QUIT = {} }, try Command.parse("QUIT\r\n"));
 }
