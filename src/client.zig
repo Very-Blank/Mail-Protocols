@@ -58,35 +58,70 @@ pub fn serve(self: *Self) !void {
                         continue :mail try self.readCommand();
                     },
                     .DATA => {
-                        var buffer: []u8 = self.text_line[0..];
-                        var length: usize = 0;
+                        const length: usize = init: {
+                            var buffer: []u8 = self.text_line[0..];
+                            var length: usize = 0;
 
-                        // FIXME: ADD MAX ITERATION COUNT
-                        while (true) {
-                            if (1400 <= length) {
-                                // FIXME: TOO MUCH DATA.
+                            // FIXME: ADD MAX ITERATION COUNT
+                            while (true) {
+                                if (1400 <= length) {
+                                    // FIXME: TOO MUCH DATA.
+                                }
+
+                                const result = linux.read(
+                                    self.socket,
+                                    buffer.ptr,
+                                    buffer.len,
+                                );
+
+                                if (linux.errno(result) != .SUCCESS) {
+                                    return error.FailedToRead;
+                                }
+
+                                // We do this because there is no way of knowing when the end sequence happens.
+                                // FIXME: THIS ISN'T DONE!
+                                if (std.mem.find(u8, &self.text_line, &.{ '\r', '\n', '.', '\r', '\n' })) |end| {
+                                    break :init end;
+                                }
+
+                                length += result;
+                                buffer = self.text_line[length..];
                             }
+                        };
 
-                            const result = linux.read(
-                                self.socket,
-                                buffer.ptr,
-                                buffer.len,
-                            );
+                        const data = init: {
+                            var move: usize = 0;
+                            var state: enum {
+                                none,
+                                @"\r",
+                                @"\r\n",
+                            } = .none;
 
-                            if (linux.errno(result) != .SUCCESS) {
-                                return error.FailedToRead;
+                            var i: usize = 0;
+                            while (i + move < length) {
+                                switch (self.text_line[i]) {
+                                    '\r' => state = .@"\r",
+                                    '\n' => state = switch (state) {
+                                        .@"\r" => .@"\r\n",
+                                        else => .none,
+                                    },
+                                    '.' => {
+                                        defer state = .none;
+
+                                        switch (state) {
+                                            .@"\r\n" => {
+                                                move += 1;
+                                                continue;
+                                            },
+                                            else => {},
+                                        }
+                                    },
+                                }
+
+                                self.text_line[i] = self.text_line[i + move];
+                                i += 1;
                             }
-
-                            // We do this because there is no way of knowing when the end sequence happens.
-                            // FIXME: THIS ISN'T DONE!
-                            if (std.mem.find(u8, &self.text_line, &.{ '\r', '\n', '.', '\r', '\n' })) |end| {
-                                std.debug.print("DATA: {s}\n", .{self.text_line[0..end]});
-                                break;
-                            }
-
-                            length += result;
-                            buffer = self.text_line[length..];
-                        }
+                        };
                     },
                     else => {
                         try self.reply("{d} Bad sequence of commands", .{503});
@@ -114,13 +149,13 @@ pub fn serve(self: *Self) !void {
 
 /// Writes the message to the socket, appends <CRLF> to the end.
 pub fn reply(self: *Self, comptime format: []const u8, args: anytype) !void {
-    const slice = std.mem.print(&self.reply_line, format ++ "\r\n", args) catch unreachable;
+    const slice = std.mem.print(&self.reply_line, format ++ .{ '\r', '\n' }, args) catch unreachable;
     if (linux.errno(linux.write(self.socket, slice.ptr, slice.len)) != .SUCCESS)
         return error.WriteFailed;
 }
 
 pub fn readCommand(self: *Self) !Command {
-    const buffer: []const u8 = init: {
+    const input: []const u8 = init: {
         var buffer: []u8 = self.commad_line[0..];
         var length: usize = 0;
 
@@ -145,5 +180,5 @@ pub fn readCommand(self: *Self) !Command {
         }
     };
 
-    return Command.parse(buffer);
+    return Command.parse(input);
 }
