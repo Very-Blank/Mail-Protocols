@@ -116,12 +116,17 @@ pub fn serve(self: *Self) !void {
                                             else => {},
                                         }
                                     },
+                                    else => {},
                                 }
 
                                 self.text_line[i] = self.text_line[i + move];
                                 i += 1;
                             }
+
+                            break :init self.text_line[0 .. length - move];
                         };
+
+                        std.debug.print("{s}", .{data});
                     },
                     else => {
                         try self.reply("{d} Bad sequence of commands", .{503});
