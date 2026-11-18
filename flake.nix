@@ -9,8 +9,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    nmux = {
-      url = "github:Very-Blank/Nmux";
+    nixos = {
+      url = "github:Very-Blank/Nixos";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -21,18 +21,19 @@
     devShells."${system}".default = let
       pkgs = import nixpkgs {inherit system;};
 
-      tmux = inputs.nmux.mkPackage {
-        system = system;
-
-        extraModule = {...}: {
-          config.nmux = {
-            name = "Mail-Protocols";
-            shell = "${pkgs.lib.getExe pkgs.zsh}";
-            extraConfig = ''
-              set-hook -g session-created 'send-keys "nvim" enter ; new-window ; select-window -t 0'
-            '';
-          };
-        };
+      tmux = inputs.nixos.packages.${system}.tmux.override {
+        name = "Mail-Protocols";
+        shell = "${pkgs.lib.getExe pkgs.zsh}";
+        windows = [
+          {
+            name = "NVIM";
+            cmd = ["nvim"];
+            onExit = "respawn";
+          }
+          {
+            name = "COMMANDS";
+          }
+        ];
       };
     in
       pkgs.mkShell
@@ -52,7 +53,7 @@
               'Subject: Test message\r\nFrom: sender@example.com\r\nTo: recipient@example.com\r\n\r\nHello, this is a test.\r\n.\r\n'
               'QUIT\r\n'
               )
-                  
+                      
               (for command in "''${commands[@]}" ; do
                   sleep 1
                   printf '%b' "$command"
@@ -88,7 +89,8 @@
         ];
 
         shellHook = ''
-          ${pkgs.lib.getExe' tmux "tmux"}
+          unset shellHook
+          ${tmux.shellGuard}
           exit
         '';
       };
