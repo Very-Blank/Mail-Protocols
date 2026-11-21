@@ -47,6 +47,7 @@ pub fn serve(self: *Self) !void {
 
     origin: switch (try self.readCommand()) {
         .HELO => |client_domain| switch (try self.readCommand()) {
+            // FIXME: We might needt to add another loop here!
             .MAIL => |reverse_path| {
                 _ = client_domain;
                 _ = reverse_path;
