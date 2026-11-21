@@ -53,7 +53,7 @@
               'Subject: Test message\r\nFrom: sender@example.com\r\nTo: recipient@example.com\r\n\r\nHello, this is a test.\r\n.\r\n'
               'QUIT\r\n'
               )
-                      
+                          
               (for command in "''${commands[@]}" ; do
                   sleep 1
                   printf '%b' "$command"
@@ -62,26 +62,20 @@
           })
 
           (
-            inputs.nixnvim.mkPackage {
-              system = system;
-              extraModule = {...}: {
-                config = {
-                  vim = {
-                    languages = {
-                      zig = {
-                        enable = true;
-                        lsp.enable = true;
-                        treesitter.enable = true;
-                      };
-                    };
-
-                    lsp.servers.zls = pkgs.lib.mkForce {
-                      filetypes = ["zig"];
-                      cmd = pkgs.lib.mkForce [
-                        "${pkgs.lib.getExe pkgs.zigscient}"
-                      ];
-                    };
+            inputs.nixnvim.mkPackage pkgs {
+              vim = {
+                languages = {
+                  zig = {
+                    enable = true;
+                    lsp.enable = true;
+                    treesitter.enable = true;
                   };
+                };
+
+                lsp.servers.zls = pkgs.lib.mkForce {
+                  cmd = pkgs.lib.mkForce [
+                    (pkgs.lib.getExe pkgs.zigscient)
+                  ];
                 };
               };
             }

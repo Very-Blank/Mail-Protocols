@@ -2,10 +2,12 @@ const std = @import("std");
 const linux = std.os.linux;
 
 const Client = @import("client.zig");
+const Inbox = @import("inbox").Inbox;
 
 port: u16 = std.mem.nativeToBig(u16, 6000),
 address: u32 = @bitCast([4]u8{ 127, 0, 0, 1 }),
 socket: linux.fd_t,
+inbox: Inbox,
 
 const Self = @This();
 
@@ -50,12 +52,14 @@ pub fn init(
         .port = address.port,
         .address = address.address,
         .socket = socket,
+        .inbox = try Inbox.init(),
     };
 }
 
-pub fn deinit(self: *const Self) void {
+pub fn deinit(self: *Self) void {
     _ = linux.shutdown(self.socket, linux.SHUT.RDWR);
     _ = linux.close(self.socket);
+    self.inbox.deinit();
 }
 
 pub fn run(self: *Self) !void {

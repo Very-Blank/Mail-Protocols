@@ -4,10 +4,14 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const impl = b.option(enum {
-        help,
-        smtp,
-    }, "module", "Switch between the different implementations") orelse .help;
+    const impl = b.option(
+        enum {
+            help,
+            smtp,
+        },
+        "module",
+        "Switch between the different implementations",
+    ) orelse .help;
 
     const sqlite = b.dependency("sqlite", .{
         .target = target,
