@@ -36,6 +36,10 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // We need some definations from smtp
+    // NOTE: In zig circular are fine out of the box.
+    inbox_module.addImport("smtp", smtp_module);
+
     const exe = b.addExecutable(.{
         .name = "email",
         .root_module = b.createModule(.{
