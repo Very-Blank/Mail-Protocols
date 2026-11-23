@@ -58,7 +58,7 @@ pub fn init(options: struct { file: ?[:0]const u8 = "./inbox.sqlite" }) !Self {
 
     errdefer self.deinit();
 
-    // Name could be the primary key, but that isn't a good idea.
+    // Name could be the primary key, but that isn't a good idea imo.
     try self.db.exec(
         \\CREATE TABLE IF NOT EXISTS users(
         \\  id INTEGER PRIMARY KEY, 
