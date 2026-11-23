@@ -17,7 +17,7 @@ pub inline fn init(name: []const u8) Self {
 
             break :init array;
         },
-        .len = name.len,
+        .len = @intCast(name.len),
     };
 }
 

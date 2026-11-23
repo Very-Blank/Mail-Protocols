@@ -197,12 +197,12 @@ test "Valid command parsing" {
     );
 
     try std.testing.expectEqual(
-        Command{ .MAIL = .{ .domain = .init("example.com"), .user = .init("sender") } },
+        Command{ .MAIL = .init("sender", "example.com") },
         try Command.parse("MAIL FROM:<sender@example.com>\r\n"),
     );
 
     try std.testing.expectEqual(
-        Command{ .RCPT = .{ .domain = .init("example.com"), .user = .init("recipient") } },
+        Command{ .RCPT = .init("recipient", "example.com") },
 
         try Command.parse("RCPT TO:<recipient@example.com>\r\n"),
     );

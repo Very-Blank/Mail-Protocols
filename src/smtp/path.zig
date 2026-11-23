@@ -7,6 +7,15 @@ domain: Domain,
 
 const Self = @This();
 
+pub const max_len = User.max_len + (.{'@'}).len + Domain.max_len;
+
+pub fn init(user: []const u8, domain: []const u8) Self {
+    return .{
+        .user = .init(user),
+        .domain = .init(domain),
+    };
+}
+
 // https://www.rfc-editor.org/info/rfc821/#page-30
 // We only implement a subset of the spec.
 // FULL:

@@ -4,10 +4,23 @@ const smtp = @import("smtp");
 
 const Db = sqlite.Db;
 const User = smtp.User;
+const Path = smtp.Path;
 
 db: Db,
 
 const Self = @This();
+
+pub const Message = struct {
+    data: []const u8,
+    sender: []const u8,
+
+    pub fn deinit(self: *Message, allocator: std.mem.Allocator) void {
+        allocator.free(self.data);
+        self.data = undefined;
+        allocator.free(self.sender);
+        self.sender = undefined;
+    }
+};
 
 pub fn init(options: struct { file: ?[:0]const u8 = "./inbox.sqlite" }) !Self {
     var diags = sqlite.Diagnostics{};
@@ -58,7 +71,7 @@ pub fn init(options: struct { file: ?[:0]const u8 = "./inbox.sqlite" }) !Self {
         \\  id INTEGER PRIMARY KEY, 
         \\  receiver INTEGER NOT NULL, 
         \\  sender TEXT NOT NULL UNIQUE,
-        \\  read TEXT NOT NULL DEFAULT "UNREAD",
+        \\  read TEXT NOT NULL DEFAULT 'UNREAD' CHECK (read in ('READ', 'UNREAD')),
         \\  data TEXT NOT NULL,
         \\
         \\  FOREIGN KEY (receiver) REFERENCES user(id) ON DELETE CASCADE
@@ -72,7 +85,7 @@ pub fn deinit(self: *Self) void {
     self.db.deinit();
 }
 
-pub fn insertIntoUser(self: *Self, user: User) !void {
+pub fn addUser(self: *Self, user: User) !void {
     const query =
         \\INSERT INTO users(name) VALUES(?);
     ;
@@ -90,9 +103,9 @@ pub fn insertIntoUser(self: *Self, user: User) !void {
     });
 }
 
-pub fn queryUserID(self: *Self, user: User) !usize {
+pub fn addMessage(self: *Self, receiver: User, sender: Path, data: []const u8) !void {
     const query =
-        \\SELECT id FROM users WHERE name = ?
+        \\INSERT INTO inbox(receiver, sender, data) VALUES((SELECT id FROM users WHERE name = ?), ?, ?);
     ;
 
     var diags = sqlite.Diagnostics{};
@@ -103,95 +116,42 @@ pub fn queryUserID(self: *Self, user: User) !usize {
 
     defer stmt.deinit();
 
-    return (try stmt.one(
-        usize,
-        .{},
-        .{ .name = user.get() },
-    ) orelse return error.UserNotFound);
-}
-
-pub fn insertIntoInbox(self: *Self, receiver: usize, sender: []const u8, data: []const u8) !void {
-    const query =
-        \\INSERT INTO inbox(receiver, sender, data) VALUES(?, ?, ?)
-    ;
-
-    var diags = sqlite.Diagnostics{};
-    var stmt = self.db.prepareWithDiags(query, .{ .diags = &diags }) catch |err| {
-        logDiagnostics(err, diags);
-        return err;
-    };
-
-    defer stmt.deinit();
+    var buffer: [Path.max_len]u8 = @splat(0);
+    const sender_formatted: []u8 = std.mem.print(&buffer, "{s}@{s}", .{ sender.user.get(), sender.domain.get() }) catch unreachable;
 
     try stmt.exec(.{}, .{
-        .receiver = receiver,
-        .sender = sender,
+        .receiver = receiver.get(),
+        .sender = sender_formatted,
         .data = data,
     });
 }
 
-pub const Message = struct {
-    data: []const u8,
-    sender: []const u8,
-};
-
-pub fn queryInbox(
+pub fn getMessages(
     self: *Self,
     allocator: std.mem.Allocator,
-    receiver: usize,
-    options: struct { state: enum { read, unread, all } = .all },
+    receiver: User,
 ) ![]Message {
     var diags = sqlite.Diagnostics{};
 
-    switch (options.state) {
-        .all => {
-            const query =
-                \\SELECT data, sender FROM inbox WHERE id = ?
-            ;
+    const query =
+        \\UPDATE inbox SET read = 'READ' WHERE receiver = (SELECT id FROM users WHERE name = ?) AND read = 'UNREAD' RETURNING data, sender;
+    ;
 
-            var stmt = self.db.prepareWithDiags(query, .{ .diags = &diags }) catch |err| {
-                logDiagnostics(err, diags);
-                return err;
-            };
+    var stmt = self.db.prepareWithDiags(query, .{ .diags = &diags }) catch |err| {
+        logDiagnostics(err, diags);
+        return err;
+    };
 
-            defer stmt.deinit();
+    defer stmt.deinit();
 
-            return try stmt.all(
-                Message,
-                allocator,
-                .{},
-                .{
-                    .id = receiver,
-                },
-            );
+    return try stmt.all(
+        Message,
+        allocator,
+        .{},
+        .{
+            receiver.get(),
         },
-        else => |state| {
-            const query =
-                \\SELECT data, sender FROM inbox WHERE id = ? AND read = ?
-            ;
-
-            var stmt = self.db.prepareWithDiags(query, .{ .diags = &diags }) catch |err| {
-                logDiagnostics(err, diags);
-                return err;
-            };
-
-            defer stmt.deinit();
-
-            return try stmt.all(
-                Message,
-                allocator,
-                .{},
-                .{
-                    .id = receiver,
-                    .read = switch (state) {
-                        .read => "READ",
-                        .unread => "UNREAD",
-                        else => unreachable,
-                    },
-                },
-            );
-        },
-    }
+    );
 }
 
 pub fn logDiagnostics(err: anyerror, diagnostics: sqlite.Diagnostics) void {
@@ -202,7 +162,7 @@ pub fn logDiagnostics(err: anyerror, diagnostics: sqlite.Diagnostics) void {
     std.log.err("Got error {any}.\nDiagnostics:\n{s}\n", .{ err, buffer[0..writer.end] });
 }
 
-test "Add user and it's ID" {
+test "Add user" {
     // const io = std.testing.io;
     // const allocator = std.testing.allocator;
 
@@ -213,12 +173,12 @@ test "Add user and it's ID" {
     defer inbox.deinit();
 
     const test_user: User = .init("test");
-    try inbox.insertIntoUser(test_user);
+    try inbox.addUser(test_user);
 
-    try std.testing.expectEqual(1, try inbox.queryUserID(test_user));
+    // FIXME: add check where we query users and see that it's getting added.
 }
 
-test "Write a new message to user's inbox" {
+test "Write a new message to user's inbox and read it." {
     // const io = std.testing.io;
     const allocator = std.testing.allocator;
 
@@ -229,30 +189,34 @@ test "Write a new message to user's inbox" {
     defer inbox.deinit();
 
     const test_user: User = .init("test");
-    try inbox.insertIntoUser(test_user);
+    try inbox.addUser(test_user);
 
-    const user_id = try inbox.queryUserID(test_user);
+    const message =
+        \\Subject: Test message
+        \\From: sender@example.com
+        \\To: recipient@example.com
+        \\
+        \\Hello, this is a test.
+    ;
 
-    try inbox.insertIntoInbox(
-        user_id,
-        "sender@example.com",
-        \\Subject: Test message\r
-        \\From: sender@example.com\r
-        \\To: recipient@example.com\r
-        \\\r
-        \\Hello, this is a test.\r
-        ,
-    );
+    try inbox.addMessage(test_user, .init("sender", "example.com"), message);
 
-    const messages: []Message = try inbox.queryInbox(allocator, user_id, .{});
-    defer {
-        for (messages) |message| {
-            allocator.free(message.data);
-            allocator.free(message.sender);
+    {
+        const messages: []Message = try inbox.getMessages(allocator, test_user);
+        defer {
+            for (messages) |capture| {
+                allocator.free(capture.data);
+                allocator.free(capture.sender);
+            }
+
+            allocator.free(messages);
         }
 
-        allocator.free(messages);
+        try std.testing.expectEqualDeep(@as([]const Message, &.{Message{ .data = message, .sender = "sender@example.com" }}), messages);
     }
 
-    std.debug.print("{s}", .{messages[0].data});
+    {
+        const messages: []Message = try inbox.getMessages(allocator, test_user);
+        try std.testing.expectEqualDeep(@as([]const Message, &.{}), messages);
+    }
 }
