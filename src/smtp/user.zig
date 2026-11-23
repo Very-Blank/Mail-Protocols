@@ -8,6 +8,20 @@ const Self = @This();
 // https://www.rfc-editor.org/info/rfc821/#page-42
 pub const max_len = 64;
 
+pub inline fn init(name: []const u8) Self {
+    std.debug.assert(name.len <= max_len);
+
+    return .{
+        .buffer = init: {
+            var array: [max_len]u8 = @splat(0);
+            @memcpy(array[0..name.len], name);
+
+            break :init array;
+        },
+        .len = name.len,
+    };
+}
+
 pub inline fn get(self: *const Self) []const u8 {
     std.debug.assert(0 < self.len and self.len <= max_len);
     return self.buffer[0..self.len];

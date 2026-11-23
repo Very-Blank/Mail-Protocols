@@ -192,30 +192,17 @@ test "Case insensitive of commands" {
 
 test "Valid command parsing" {
     try std.testing.expectEqual(
-        Command{ .HELO = .{ .buffer = ("example.com" ++ @as([53]u8, @splat(0))).*, .len = 11 } },
+        Command{ .HELO = .init("example.com") },
         try Command.parse("HELO example.com\r\n"),
     );
 
     try std.testing.expectEqual(
-        Command{ .MAIL = .{ .domain = .{
-            .buffer = ("example.com" ++ @as([53]u8, @splat(0))).*,
-            .len = 11,
-        }, .user = .{
-            .buffer = ("sender" ++ @as([58]u8, @splat(0))).*,
-            .len = 6,
-        } } },
-
+        Command{ .MAIL = .{ .domain = .init("example.com"), .user = .init("sender") } },
         try Command.parse("MAIL FROM:<sender@example.com>\r\n"),
     );
 
     try std.testing.expectEqual(
-        Command{ .RCPT = .{ .domain = .{
-            .buffer = ("example.com" ++ @as([53]u8, @splat(0))).*,
-            .len = 11,
-        }, .user = .{
-            .buffer = ("recipient" ++ @as([55]u8, @splat(0))).*,
-            .len = 9,
-        } } },
+        Command{ .RCPT = .{ .domain = .init("example.com"), .user = .init("recipient") } },
 
         try Command.parse("RCPT TO:<recipient@example.com>\r\n"),
     );
