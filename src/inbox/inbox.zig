@@ -126,6 +126,23 @@ pub fn addMessage(self: *Self, receiver: User, sender: Path, data: []const u8) !
     });
 }
 
+pub fn getUsers(self: *Self, allocator: std.mem.Allocator) ![][]const u8 {
+    var diags = sqlite.Diagnostics{};
+
+    const query =
+        \\SELECT name FROM users;
+    ;
+
+    var stmt = self.db.prepareWithDiags(query, .{ .diags = &diags }) catch |err| {
+        logDiagnostics(err, diags);
+        return err;
+    };
+
+    defer stmt.deinit();
+
+    return try stmt.all([]const u8, allocator, .{}, .{});
+}
+
 pub fn getMessages(
     self: *Self,
     allocator: std.mem.Allocator,
@@ -163,13 +180,24 @@ pub fn logDiagnostics(err: anyerror, diagnostics: sqlite.Diagnostics) void {
 }
 
 test "Add user" {
+    const allocator = std.testing.allocator;
+
     var inbox: Self = try .init(.{ .file = null });
     defer inbox.deinit();
 
     const test_user: User = .init("test");
     try inbox.addUser(test_user);
 
-    // FIXME: add check where we query users and see that it's getting added.
+    const users = try inbox.getUsers(allocator);
+    defer {
+        for (users) |user| {
+            allocator.free(user);
+        }
+
+        allocator.free(users);
+    }
+
+    try std.testing.expectEqualDeep(@as([]const []const u8, &.{"test"}), users);
 }
 
 test "Write a new message to user's inbox and read it." {
