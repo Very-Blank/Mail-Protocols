@@ -163,12 +163,6 @@ pub fn logDiagnostics(err: anyerror, diagnostics: sqlite.Diagnostics) void {
 }
 
 test "Add user" {
-    // const io = std.testing.io;
-    // const allocator = std.testing.allocator;
-
-    var tmp = std.testing.tmpDir(.{ .access_sub_paths = true });
-    defer tmp.cleanup();
-
     var inbox: Self = try .init(.{ .file = null });
     defer inbox.deinit();
 
@@ -179,11 +173,7 @@ test "Add user" {
 }
 
 test "Write a new message to user's inbox and read it." {
-    // const io = std.testing.io;
     const allocator = std.testing.allocator;
-
-    var tmp = std.testing.tmpDir(.{ .access_sub_paths = true });
-    defer tmp.cleanup();
 
     var inbox: Self = try .init(.{ .file = null });
     defer inbox.deinit();
