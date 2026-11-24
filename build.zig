@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) void {
         enum {
             help,
             smtp,
+            inbox,
         },
         "module",
         "Switch between the different implementations",
@@ -46,6 +47,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = switch (impl) {
                 .help => b.path("src/main.zig"),
                 .smtp => b.path("src/smtp/main.zig"),
+                .inbox => b.path("src/inbox/main.zig"),
             },
             .target = target,
             .optimize = optimize,
@@ -53,6 +55,9 @@ pub fn build(b: *std.Build) void {
                 .help => &.{},
                 .smtp => &.{
                     .{ .name = "smtp", .module = smtp_module },
+                },
+                .inbox => &.{
+                    .{ .name = "inbox", .module = inbox_module },
                 },
             },
         }),

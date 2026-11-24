@@ -292,11 +292,11 @@
         "nvf": "nvf_2"
       },
       "locked": {
-        "lastModified": 1795294307,
-        "narHash": "sha256-xcnvs9Su5yZckVi4vmyyf38wx+HB8RKD2GPGDPVnK2A=",
+        "lastModified": 1795298125,
+        "narHash": "sha256-s8Dy1PO44PV31YW3PeJt3f2J+cHhxlQ2411Hi5hE4J0=",
         "owner": "Very-Blank",
         "repo": "NixNvim",
-        "rev": "ff2f27e1b90263c0e7b4e48d85a2b7067da93e7a",
+        "rev": "a8aeddff3209b5eeb74dcc32eee603642c04b21d",
         "type": "github"
       },
       "original": {
@@ -326,11 +326,11 @@
         "sops-nix": "sops-nix"
       },
       "locked": {
-        "lastModified": 1795297807,
-        "narHash": "sha256-DU4c7we7WQy0kpaKtnlvjzugWYaZ6dLatXqkmAOE6ts=",
+        "lastModified": 1795496320,
+        "narHash": "sha256-IE5TrIuLcG4nzT2Qtx28/ueLbeSSBWYczpglOEeD00w=",
         "owner": "Very-Blank",
         "repo": "Nixos",
-        "rev": "a9397b0c0b2d32e3188c24752a8bf218610c0b7c",
+        "rev": "04754ecf1621835ae1e28543b9cf582968635b3e",
         "type": "github"
       },
       "original": {
