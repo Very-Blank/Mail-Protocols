@@ -114,48 +114,50 @@ pub fn run(self: *Self, allocator: std.mem.Allocator) !void {
         var command_buffer: [8]u8 = @splat(0);
         try read(socket, &command_buffer);
 
-        const command: []const u8 = command_buffer[0..4];
+        const command: u32 = std.mem.bytesToValue(u32, command_buffer[0..4]);
         const length: u32 = std.mem.bytesToValue(u32, command_buffer[4..]);
 
         // NOTE: This is very inefficient, but it's quick to implement it so...
-        if (std.mem.eql(u8, command, "POST")) {
-            buffer = try allocator.realloc(buffer, length);
-            try read(socket, buffer);
+        switch (command) {
+            std.mem.bytesToValue(u32, "POST") => {
+                buffer = try allocator.realloc(buffer, length);
+                try read(socket, buffer);
 
-            const parsed_json: std.json.Parsed(Post) = try std.json.parseFromSlice(Post, allocator, buffer, .{});
-            defer parsed_json.deinit();
+                const parsed_json: std.json.Parsed(Post) = try std.json.parseFromSlice(Post, allocator, buffer, .{});
+                defer parsed_json.deinit();
 
-            try self.inbox.addMessage(parsed_json.value.receiver, parsed_json.value.sender, parsed_json.value.data);
-        } else if (std.mem.eql(u8, command, "READ")) {
-            buffer = try allocator.realloc(buffer, length);
-            try read(socket, buffer);
+                try self.inbox.addMessage(parsed_json.value.receiver, parsed_json.value.sender, parsed_json.value.data);
+            },
+            std.mem.bytesToValue(u32, "READ") => {
+                buffer = try allocator.realloc(buffer, length);
+                try read(socket, buffer);
 
-            const parsed_json: std.json.Parsed(User) = try std.json.parseFromSlice(User, allocator, buffer, .{});
-            defer parsed_json.deinit();
+                const parsed_json: std.json.Parsed(User) = try std.json.parseFromSlice(User, allocator, buffer, .{});
+                defer parsed_json.deinit();
 
-            const messages = try self.inbox.getMessages(allocator, parsed_json.value);
+                const messages = try self.inbox.getMessages(allocator, parsed_json.value);
 
-            defer {
-                for (messages) |capture| {
-                    allocator.free(capture.data);
-                    allocator.free(capture.sender);
+                defer {
+                    for (messages) |capture| {
+                        allocator.free(capture.data);
+                        allocator.free(capture.sender);
+                    }
+
+                    allocator.free(messages);
                 }
 
-                allocator.free(messages);
-            }
+                var allocating_writer = std.Io.Writer.Allocating.init(allocator);
+                defer allocating_writer.deinit();
 
-            var allocating_writer = std.Io.Writer.Allocating.init(allocator);
-            defer allocating_writer.deinit();
+                const fmt = std.json.fmt(messages, .{});
+                try fmt.format(&allocating_writer.writer);
 
-            const fmt = std.json.fmt(messages, .{});
-            try fmt.format(&allocating_writer.writer);
+                const data = allocating_writer.written();
 
-            const data = allocating_writer.written();
-
-            if (linux.errno(linux.write(socket, data.ptr, data.len)) != .SUCCESS)
-                return error.WriteFailed;
-        } else {
-            // FIXME: ERROR CLIENT IS BEING BADDY
+                if (linux.errno(linux.write(socket, data.ptr, data.len)) != .SUCCESS)
+                    return error.WriteFailed;
+            },
+            else => {},
         }
 
         std.debug.print("Client disconnected\n", .{});

@@ -1,9 +1,13 @@
 const std = @import("std");
+const smtp = @import("smtp");
 const linux = std.os.linux;
 
 pub const Inbox = @import("inbox.zig");
 pub const Server = @import("server.zig");
 pub const Post = Server.Post;
+
+const Path = smtp.Path;
+const User = smtp.User;
 
 pub fn addMessage(
     allocator: std.mem.Allocator,
@@ -39,19 +43,24 @@ pub fn addMessage(
     var allocating_writer = std.Io.Writer.Allocating.init(allocator);
     defer allocating_writer.deinit();
 
-    const fmt = std.json.fmt(messages, .{});
+    const fmt = std.json.fmt(Post{
+        .receiver = receiver,
+        .sender = sender,
+        .data = data,
+    }, .{});
+
     try fmt.format(&allocating_writer.writer);
 
-    const data = allocating_writer.written();
+    const json = allocating_writer.written();
 
     // We repalce the ???? with the actuall length.
     var command: [8]u8 = "POST????";
-    std.mem.writeInt(u32, buffer[4..], @intCast(data.len), .little);
+    std.mem.writeInt(u32, command[4..], @intCast(json.len), .little);
 
     if (linux.errno(linux.write(socket, command, command.len)) != .SUCCESS)
         return error.WriteFailed;
 
-    if (linux.errno(linux.write(socket, data.ptr, data.len)) != .SUCCESS)
+    if (linux.errno(linux.write(socket, json.ptr, json.len)) != .SUCCESS)
         return error.WriteFailed;
 }
 
