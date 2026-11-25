@@ -5,7 +5,7 @@ All codes, lengths and commands shall be written as bytes backed by 32 bit littl
 Altough commands do have an ascii reposentation they should be treated as numbers.
 Lengths specify the amount of bytes the server will be reading from you next or vice versa.
 
-## Post
+### Post
 
 Command `1414745936`, which is `POST` in ascii.
 
@@ -20,7 +20,7 @@ Command `1414745936`, which is `POST` in ascii.
 - Read `<json>`
 - exit
 
-## Read
+### Read
 
 Command: `1145128274`, which is `READ` in ascii.
 
