@@ -3,24 +3,24 @@ const linux = std.os.linux;
 
 const Mock = @import("mock.zig");
 
-const LinuxMock = @This();
+const Linux = @This();
 
 allocator: std.mem.Allocator,
 
-pub fn init(allocator: std.mem.Allocator) LinuxMock {
+pub fn init(allocator: std.mem.Allocator) Linux {
     return .{
         .allocator = allocator,
     };
 }
 
 /// Don't move the LinuxMock after calling this, the returned Mock points at it.
-pub fn interface(self: *LinuxMock) Mock {
+pub fn interface(self: *Linux) Mock {
     return .{ .ptr = self, .vtable = &vtable };
 }
 
 const vtable: Mock.VTable = .{
-    .listen = LinuxMock.listen,
-    .connect = LinuxMock.connect,
+    .listen = Linux.listen,
+    .connect = Linux.connect,
 };
 
 const ServerSocket = struct {
@@ -32,7 +32,7 @@ const ServerSocket = struct {
     };
 
     pub fn accept(server_socket: *Mock.ServerSocket, mock: Mock) Mock.Error!Mock.Socket {
-        const linux_mock: *LinuxMock = @ptrCast(@alignCast(mock.ptr));
+        const linux_mock: *Linux = @ptrCast(@alignCast(mock.ptr));
         const linux_socket: *ServerSocket = @ptrCast(@alignCast(server_socket.ptr));
 
         const result = linux.accept(linux_socket.fd, null, null);
@@ -53,7 +53,7 @@ const ServerSocket = struct {
     }
 
     pub fn close(server_socket: *Mock.ServerSocket, mock: Mock) void {
-        const linux_mock: *LinuxMock = @ptrCast(@alignCast(mock.ptr));
+        const linux_mock: *Linux = @ptrCast(@alignCast(mock.ptr));
         const linux_socket: *ServerSocket = @ptrCast(@alignCast(server_socket.ptr));
 
         _ = linux.shutdown(linux_socket.fd, linux.SHUT.RDWR);
@@ -100,7 +100,7 @@ const Socket = struct {
     }
 
     pub fn close(socket: *Mock.Socket, mock: Mock) void {
-        const linux_mock: *LinuxMock = @ptrCast(@alignCast(mock.ptr));
+        const linux_mock: *Linux = @ptrCast(@alignCast(mock.ptr));
         const linux_socket: *Socket = @ptrCast(@alignCast(socket.ptr));
 
         _ = linux.close(linux_socket.fd);
@@ -110,7 +110,7 @@ const Socket = struct {
 };
 
 pub fn listen(mock_ptr: *anyopaque, port: u16, address: u32, backlog: u32) Mock.Error!Mock.ServerSocket {
-    const linux_mock: *LinuxMock = @ptrCast(@alignCast(mock_ptr));
+    const linux_mock: *Linux = @ptrCast(@alignCast(mock_ptr));
 
     const socket: linux.fd_t = init: {
         const result = linux.socket(linux.AF.INET, linux.SOCK.STREAM, linux.IPPROTO.TCP);
@@ -156,7 +156,7 @@ pub fn listen(mock_ptr: *anyopaque, port: u16, address: u32, backlog: u32) Mock.
 }
 
 pub fn connect(mock_ptr: *anyopaque, port: u16, address: u32) Mock.Error!Mock.Socket {
-    const linux_mock: *LinuxMock = @ptrCast(@alignCast(mock_ptr));
+    const linux_mock: *Linux = @ptrCast(@alignCast(mock_ptr));
 
     const socket: linux.fd_t = init: {
         const result = linux.socket(linux.AF.INET, linux.SOCK.STREAM, linux.IPPROTO.TCP);
