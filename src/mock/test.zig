@@ -1,19 +1,20 @@
 const std = @import("std");
-const linux = std.os.linux;
 
 const Mock = @import("mock.zig");
 
 const Test = @This();
 
-listening_sockets: []const ServerSocket,
-connecting_sockets: []const Socket,
+listening_sockets: []ServerSocket,
+connecting_sockets: []Socket,
 allocator: std.mem.Allocator,
 
-// pub fn init(allocator: std.mem.Allocator) Test {
-//     return .{
-//         .allocator = allocator,
-//     };
-// }
+pub fn init(
+    allocator: std.mem.Allocator,
+) Test {
+    return .{
+        .allocator = allocator,
+    };
+}
 
 /// Moving Test after getting the interface is undefined behaviour.
 pub fn interface(self: *Test) Mock {
@@ -26,7 +27,7 @@ const vtable: Mock.VTable = .{
 };
 
 pub const ServerSocket = struct {
-    sockets: []const Socket,
+    sockets: []Socket,
     accepts: usize = 0,
     address: u32,
     port: u16,
@@ -58,18 +59,17 @@ pub const ServerSocket = struct {
         const test_mock: *Test = @ptrCast(@alignCast(mock.ptr));
         const test_socket: *ServerSocket = @ptrCast(@alignCast(server_socket.ptr));
 
-        test_mock.allocator.destroy(test_socket);
-        server_socket.ptr = undefined;
+        _ = test_mock;
+        _ = test_socket;
     }
 };
 
 pub const Socket = struct {
     read_buffers: []const []const u8,
     write_buffers: []const []u8,
+
     reads: usize = 0,
     writes: usize = 0,
-    address: u32 = 0,
-    port: u16 = 0,
 
     const vtable: Mock.Socket.VTable = .{
         .read = Socket.read,
@@ -109,8 +109,8 @@ pub const Socket = struct {
         const test_mock: *Test = @ptrCast(@alignCast(mock.ptr));
         const test_socket: *Socket = @ptrCast(@alignCast(socket.ptr));
 
-        test_mock.allocator.destroy(test_socket);
-        socket.ptr = undefined;
+        _ = test_mock;
+        _ = test_socket;
     }
 };
 
@@ -118,20 +118,17 @@ pub fn listen(mock_ptr: *anyopaque, port: u16, address: u32, backlog: u32) Mock.
     const test_mock: *Test = @ptrCast(@alignCast(mock_ptr));
     _ = backlog;
 
-    const socket = init: {
+    const socket: *ServerSocket = init: {
         for (test_mock.listening_sockets) |socket| {
             if (port == socket.port and address == socket.address)
-                break :init socket;
+                break :init &socket;
         }
 
         @panic("Socket didn't exist");
     };
 
-    const ptr: *ServerSocket = test_mock.allocator.create(ServerSocket) catch @panic("OOM");
-    ptr.* = socket;
-
     return .{
-        .ptr = @ptrCast(ptr),
+        .ptr = @ptrCast(socket),
         .vtable = &ServerSocket.vtable,
     };
 }
@@ -139,21 +136,17 @@ pub fn listen(mock_ptr: *anyopaque, port: u16, address: u32, backlog: u32) Mock.
 pub fn connect(mock_ptr: *anyopaque, port: u16, address: u32) Mock.Error!Mock.Socket {
     const test_mock: *Test = @ptrCast(@alignCast(mock_ptr));
 
-    const socket = init: {
+    const socket: *Socket = init: {
         for (test_mock.connecting_sockets) |socket| {
             if (port == socket.port and address == socket.address)
-                break :init socket;
+                break :init &socket;
         }
 
         @panic("Socket didn't exist");
     };
 
-    const ptr: *Socket = test_mock.allocator.create(Socket) catch @panic("OOM");
-
-    ptr.* = socket;
-
     return .{
-        .ptr = @ptrCast(ptr),
+        .ptr = @ptrCast(socket),
         .vtable = &Socket.vtable,
     };
 }
