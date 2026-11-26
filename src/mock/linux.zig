@@ -39,7 +39,7 @@ const ServerSocket = struct {
 
     pub fn accept(server_socket: *Mock.ServerSocket, mock: Mock) Mock.Error!Mock.Socket {
         const linux_mock: *LinuxMock = @ptrCast(@alignCast(mock.ptr));
-        const linux_socket: *Socket = @ptrCast(@alignCast(server_socket.ptr));
+        const linux_socket: *ServerSocket = @ptrCast(@alignCast(server_socket.ptr));
 
         const result = linux.accept(linux_socket.fd, null, null);
 
