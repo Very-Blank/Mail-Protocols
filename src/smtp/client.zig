@@ -1,5 +1,5 @@
 const std = @import("std");
-const linux = std.os.linux;
+const Mock = @import("mock").Mock;
 
 const command = @import("command.zig");
 const Command = command.Command;
@@ -30,33 +30,31 @@ const domain = "localhost";
 commad_line: [max_command_len]u8 = @splat(0),
 reply_line: [max_reply_len]u8 = @splat(0),
 text_line: [max_text_len]u8 = @splat(0),
-socket: linux.fd_t,
-details: linux.sockaddr.in,
+socket: Mock.Socket,
 
 const Self = @This();
 
-pub fn deinit(self: *Self) void {
-    _ = linux.shutdown(self.socket, linux.SHUT.RDWR);
-    _ = linux.close(self.socket);
+pub fn deinit(self: *Self, mock: Mock) void {
+    self.socket.close(mock);
 }
 
 // Reply codes can be found here:
 // https://www.rfc-editor.org/info/rfc821/#page-35
-pub fn serve(self: *Self) !void {
-    try self.reply("{d} {s} Service ready", .{ 220, domain });
+pub fn serve(self: *Self, mock: Mock) !void {
+    try self.reply(mock, "{d} {s} Service ready", .{ 220, domain });
 
-    origin: switch (try self.readCommand()) {
-        .HELO => |client_domain| switch (try self.readCommand()) {
+    origin: switch (try self.readCommand(mock)) {
+        .HELO => |client_domain| switch (try self.readCommand(mock)) {
             // FIXME: We might needt to add another loop here!
             .MAIL => |reverse_path| {
                 _ = client_domain;
                 _ = reverse_path;
 
-                mail: switch (try self.readCommand()) {
+                mail: switch (try self.readCommand(mock)) {
                     .RCPT => |forward_path| {
                         _ = forward_path;
 
-                        continue :mail try self.readCommand();
+                        continue :mail try self.readCommand(mock);
                     },
                     .DATA => {
                         const length: usize = init: {
@@ -69,15 +67,7 @@ pub fn serve(self: *Self) !void {
                                     // FIXME: TOO MUCH DATA.
                                 }
 
-                                const result = linux.read(
-                                    self.socket,
-                                    buffer.ptr,
-                                    buffer.len,
-                                );
-
-                                if (linux.errno(result) != .SUCCESS) {
-                                    return error.FailedToRead;
-                                }
+                                const read = try self.socket.read(mock, buffer);
 
                                 // We do this because there is no way of knowing when the end sequence happens.
                                 // FIXME: THIS ISN'T DONE!
@@ -85,7 +75,7 @@ pub fn serve(self: *Self) !void {
                                     break :init end;
                                 }
 
-                                length += result;
+                                length += read;
                                 buffer = self.text_line[length..];
                             }
                         };
@@ -130,37 +120,38 @@ pub fn serve(self: *Self) !void {
                         std.debug.print("{s}", .{data});
                     },
                     else => {
-                        try self.reply("{d} Bad sequence of commands", .{503});
+                        try self.reply(mock, "{d} Bad sequence of commands", .{503});
 
-                        continue :origin try self.readCommand();
+                        continue :origin try self.readCommand(mock);
                     },
                 }
             },
             else => {
-                try self.reply("{d} Bad sequence of commands", .{503});
+                try self.reply(mock, "{d} Bad sequence of commands", .{503});
 
-                continue :origin try self.readCommand();
+                continue :origin try self.readCommand(mock);
             },
         },
         .QUIT => {
-            try self.reply("{d} {s} Service closing transmission channel", .{ 221, domain });
+            try self.reply(mock, "{d} {s} Service closing transmission channel", .{ 221, domain });
         },
         else => {
-            try self.reply("{d} Bad sequence of commands", .{503});
+            try self.reply(mock, "{d} Bad sequence of commands", .{503});
 
-            continue :origin try self.readCommand();
+            continue :origin try self.readCommand(mock);
         },
     }
 }
 
 /// Writes the message to the socket, appends <CRLF> to the end.
-pub fn reply(self: *Self, comptime format: []const u8, args: anytype) !void {
+pub fn reply(self: *Self, mock: Mock, comptime format: []const u8, args: anytype) !void {
     const slice = std.mem.print(&self.reply_line, format ++ .{ '\r', '\n' }, args) catch unreachable;
-    if (linux.errno(linux.write(self.socket, slice.ptr, slice.len)) != .SUCCESS)
-        return error.WriteFailed;
+    const write = try self.socket.write(mock, slice);
+    if (write != slice.len)
+        return error.WriteShort;
 }
 
-pub fn readCommand(self: *Self) !Command {
+pub fn readCommand(self: *Self, mock: Mock) !Command {
     const input: []const u8 = init: {
         var buffer: []u8 = self.commad_line[0..];
         var length: usize = 0;
@@ -168,20 +159,12 @@ pub fn readCommand(self: *Self) !Command {
         // FIXME: MAX ITERATION COUNT
         // FIXME: IF BUFFER IS FULL AND NO END FOUND RETURN ERROR!
         while (true) {
-            const result = linux.read(
-                self.socket,
-                buffer.ptr,
-                buffer.len,
-            );
-
-            if (linux.errno(result) != .SUCCESS) {
-                return error.FailedToRead;
-            }
+            const read = try self.socket.read(mock, buffer);
 
             if (std.mem.find(u8, &self.commad_line, &.{ '\r', '\n' })) |end|
                 break :init self.commad_line[0 .. end + (.{ '\r', '\n' }).len];
 
-            length += result;
+            length += read;
             buffer = self.commad_line[length..];
         }
     };

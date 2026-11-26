@@ -19,11 +19,19 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const mock_module = b.addModule("mock", .{
+        .root_source_file = b.path("src/mock/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{},
+    });
+
     const inbox_module = b.addModule("inbox", .{
         .root_source_file = b.path("src/inbox/root.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
+            .{ .name = "mock", .module = mock_module },
             .{ .name = "sqlite", .module = sqlite.module("sqlite") },
         },
     });
@@ -33,6 +41,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
+            .{ .name = "mock", .module = mock_module },
             .{ .name = "inbox", .module = inbox_module },
         },
     });
@@ -55,6 +64,7 @@ pub fn build(b: *std.Build) void {
                 .help => &.{},
                 .smtp => &.{
                     .{ .name = "smtp", .module = smtp_module },
+                    .{ .name = "mock", .module = mock_module },
                 },
                 .inbox => &.{
                     .{ .name = "inbox", .module = inbox_module },

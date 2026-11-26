@@ -1,90 +1,44 @@
 const std = @import("std");
-const linux = std.os.linux;
+const Mock = @import("mock").Mock;
 
 const Client = @import("client.zig");
 
 port: u16 = std.mem.nativeToBig(u16, 6000),
 address: u32 = @bitCast([4]u8{ 127, 0, 0, 1 }),
-socket: linux.fd_t,
+socket: Mock.ServerSocket,
 
 const Self = @This();
 
 pub fn init(
+    mock: Mock,
     address: struct {
-        port: u16 = std.mem.nativeToBig(u16, 6000),
+        port: u16 = 6000,
         address: u32 = @bitCast([4]u8{ 127, 0, 0, 1 }),
     },
 ) !Self {
-    const socket: linux.fd_t = init: {
-        const result = linux.socket(linux.AF.INET, linux.SOCK.STREAM, linux.IPPROTO.TCP);
-
-        if (linux.errno(result) != .SUCCESS)
-            return error.FailedToCreateSocket;
-
-        break :init @intCast(result);
-    };
-
-    errdefer _ = linux.close(socket);
-
-    if (linux.errno(
-        linux.bind(
-            socket,
-            @ptrCast(&linux.sockaddr.in{
-                .port = address.port,
-                .addr = address.address,
-            }),
-            @sizeOf(linux.sockaddr.in),
-        ),
-    ) != .SUCCESS)
-        return error.FailedToBind;
-
-    if (linux.errno(
-        linux.listen(
-            socket,
-            1,
-        ),
-    ) != .SUCCESS)
-        return error.FailedToListen;
-
     return .{
         .port = address.port,
         .address = address.address,
-        .socket = socket,
+        .socket = try mock.listen(address.port, address.address, 1),
     };
 }
 
-pub fn deinit(self: *Self) void {
-    _ = linux.shutdown(self.socket, linux.SHUT.RDWR);
-    _ = linux.close(self.socket);
+pub fn deinit(self: *Self, mock: Mock) void {
+    self.socket.close(mock);
 }
 
-pub fn run(self: *Self) !void {
+pub fn run(self: *Self, mock: Mock) !void {
     while (true) {
         std.debug.print("Waiting for client to connect\n", .{});
 
-        var client: Client = init: {
-            var details: linux.sockaddr.in = undefined;
-            var len: linux.socklen_t = @sizeOf(linux.sockaddr.in);
-
-            const result = linux.accept(
-                self.socket,
-                @ptrCast(&details),
-                &len,
-            );
-
-            if (linux.errno(result) != .SUCCESS)
-                return error.FailedToAccept;
-
-            break :init .{
-                .socket = @intCast(result),
-                .details = details,
-            };
+        var client: Client = .{
+            .socket = try self.socket.accept(mock),
         };
 
         std.debug.print("Client connected\n", .{});
 
-        try client.serve();
-        defer client.deinit();
+        try client.serve(mock);
+        defer client.deinit(mock);
 
         std.debug.print("Client disconnected\n", .{});
     }
