@@ -13,7 +13,7 @@ pub fn init(allocator: std.mem.Allocator) Linux {
     };
 }
 
-/// Don't move the LinuxMock after calling this, the returned Mock points at it.
+/// Moving Linux after getting the interface is undefined behaviour.
 pub fn interface(self: *Linux) Mock {
     return .{ .ptr = self, .vtable = &vtable };
 }
