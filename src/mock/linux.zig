@@ -15,27 +15,21 @@ pub fn init(allocator: std.mem.Allocator) LinuxMock {
 
 /// Don't move the LinuxMock after calling this, the returned Mock points at it.
 pub fn interface(self: *LinuxMock) Mock {
-    return .{ .ptr = self, .vtable = &mock_vtable };
+    return .{ .ptr = self, .vtable = &vtable };
 }
 
-const mock_vtable: Mock.VTable = .{
+const vtable: Mock.VTable = .{
     .listen = LinuxMock.listen,
     .connect = LinuxMock.connect,
 };
 
-const socket_vtable: Mock.Socket.VTable = .{
-    .read = Socket.read,
-    .write = Socket.write,
-    .close = Socket.close,
-};
-
-const server_socket_vtable: Mock.ServerSocket.VTable = .{
-    .accept = ServerSocket.accept,
-    .close = ServerSocket.close,
-};
-
 const ServerSocket = struct {
     fd: linux.fd_t,
+
+    const vtable: Mock.ServerSocket.VTable = .{
+        .accept = ServerSocket.accept,
+        .close = ServerSocket.close,
+    };
 
     pub fn accept(server_socket: *Mock.ServerSocket, mock: Mock) Mock.Error!Mock.Socket {
         const linux_mock: *LinuxMock = @ptrCast(@alignCast(mock.ptr));
@@ -54,7 +48,7 @@ const ServerSocket = struct {
 
         return .{
             .ptr = @ptrCast(ptr),
-            .vtable = &socket_vtable,
+            .vtable = &Socket.vtable,
         };
     }
 
@@ -71,6 +65,12 @@ const ServerSocket = struct {
 
 const Socket = struct {
     fd: linux.fd_t,
+
+    const vtable: Mock.Socket.VTable = .{
+        .read = Socket.read,
+        .write = Socket.write,
+        .close = Socket.close,
+    };
 
     pub fn read(socket: *Mock.Socket, mock: Mock, buf: []u8) Mock.Error!usize {
         _ = mock;
@@ -151,7 +151,7 @@ pub fn listen(mock_ptr: *anyopaque, port: u16, address: u32, backlog: u32) Mock.
 
     return .{
         .ptr = @ptrCast(ptr),
-        .vtable = &server_socket_vtable,
+        .vtable = &ServerSocket.vtable,
     };
 }
 
@@ -187,6 +187,6 @@ pub fn connect(mock_ptr: *anyopaque, port: u16, address: u32) Mock.Error!Mock.So
 
     return .{
         .ptr = @ptrCast(ptr),
-        .vtable = &socket_vtable,
+        .vtable = &Socket.vtable,
     };
 }
